@@ -18,7 +18,7 @@ import time
 import traceback
 
 # Import existing processors
-from paytmapp import parse_paytm_transactions, is_text_based as paytm_is_text_based, ocr_pdf as paytm_ocr_pdf
+from backend.paytmapp import parse_paytm_transactions, is_text_based as paytm_is_text_based, ocr_pdf as paytm_ocr_pdf
 from file_upload_processor import extract_pdf_data, extract_excel_data
 
 app = Flask(__name__)
