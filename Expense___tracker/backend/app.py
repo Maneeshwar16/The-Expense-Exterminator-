@@ -19,8 +19,23 @@ import uuid
 # Import Paytm processor functions
 from paytmapp import parse_paytm_transactions, is_text_based as paytm_is_text_based, ocr_pdf as paytm_ocr_pdf
 
-# Import file upload processor functions
-from file_upload_processor import extract_pdf_data, extract_excel_data
+# File upload processor functions (moved inline)
+def extract_pdf_data(file_path: str) -> List[Dict[str, Any]]:
+    """Extract data from PDF files."""
+    try:
+        text = extract_text(file_path)
+        return [{"text": text, "type": "pdf"}]
+    except Exception as e:
+        return [{"error": str(e), "type": "pdf"}]
+
+def extract_excel_data(file_path: str) -> List[Dict[str, Any]]:
+    """Extract data from Excel files."""
+    try:
+        import pandas as pd
+        df = pd.read_excel(file_path)
+        return df.to_dict('records')
+    except Exception as e:
+        return [{"error": str(e), "type": "excel"}]
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
