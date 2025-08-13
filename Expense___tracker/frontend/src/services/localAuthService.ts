@@ -1,188 +1,149 @@
-// Local Authentication Service - replaces Supabase
-const API_BASE_URL = 'http://localhost:5000/api';
+// --- CORRECTED api/auth.ts ---
 
-export interface User {
-  id: string;
-  email: string;
-  displayName: string;
-  createdAt: string;
+import { Transaction, Category, User } from '../types' // Assuming you have a types file
+
+// CORRECTED: Use environment variable for production, with a fallback for local development
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+const ENDPOINTS = {
+  // File processing (Note: These are at the root, not under /api)
+  PROCESS_PHONEPE_PDF: '/process-phonepe-pdf',
+  PROCESS_PAYTM_PDF: '/process-paytm-pdf',
+  
+  // API routes
+  TRANSACTIONS: '/api/transactions',
+  TRANSACTION_BULK: '/api/transactions/bulk',
+  TRANSACTION_DETAIL: (id: string) => `/api/transactions/${id}`,
+  
+  CATEGORIES: '/api/categories',
+  CATEGORY_DETAIL: (id: string) => `/api/categories/${id}`,
+  
+  USER_PREFERENCES: '/api/user-preferences',
+  
+  // CORRECTED: Authentication endpoint names
+  AUTH_LOGIN: '/api/auth/login',
+  AUTH_REGISTER: '/api/auth/register',
+  AUTH_LOGOUT: '/api/auth/logout',
+  AUTH_PROFILE: '/api/auth/profile', // Corrected from /user to /profile
+  
+  HEALTH: '/health'
+} as const;
+
+// Helper function for making API calls
+async function apiCall<T>(
+  endpoint: string, 
+  options: RequestInit = {}
+): Promise<T> {
+  const url = `${API_BASE_URL}${endpoint}`;
+  
+  const defaultOptions: RequestInit = {
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+    credentials: 'include', // Essential for session cookies
+    ...options,
+  };
+
+  const response = await fetch(url, defaultOptions);
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    // Use the specific error message from the backend if it exists
+    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+  }
+  
+  // For DELETE requests or others that might not have a body
+  if (response.status === 204 || response.headers.get("content-length") === "0") {
+    return null as T;
+  }
+
+  return response.json();
 }
 
-export interface AuthResponse {
-  success: boolean;
-  user?: User;
-  error?: string;
-}
+// A separate helper for file uploads which use FormData
+async function fileApiCall<T>(endpoint: string, file: File): Promise<T> {
+    const url = `${API_BASE_URL}${endpoint}`;
+    const formData = new FormData();
+    formData.append('file', file);
 
-export interface Transaction {
-  id?: number;
-  date: string;
-  merchant: string;
-  type: string;
-  amount: number;
-  category?: string;
-  platform?: string;
-  createdAt?: string;
-}
-
-export class LocalAuthService {
-  private static async makeRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      credentials: 'include', // Important for session cookies
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      ...options,
+    const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
     });
 
-    const data = await response.json();
-    
     if (!response.ok) {
-      throw new Error(data.error || `HTTP ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `File upload failed: ${response.status}`);
     }
-    
-    return data;
+    return response.json();
+}
+
+
+export class ApiService {
+  // --- Authentication Methods ---
+  static async register(email: string, password: string, name: string): Promise<{ user: User }> {
+    // CORRECTED: Sending 'name' instead of 'displayName'
+    return apiCall<{ user: User }>(ENDPOINTS.AUTH_REGISTER, {
+      method: 'POST',
+      body: JSON.stringify({ email, password, name }),
+    });
   }
 
-  // Authentication methods
-  static async signUp(email: string, password: string, displayName?: string): Promise<AuthResponse> {
-    try {
-      const data = await this.makeRequest('/auth/register', {
-        method: 'POST',
-        body: JSON.stringify({ email, password, displayName }),
-      });
-      
-      return { success: true, user: data.user };
-    } catch (error) {
-      return { success: false, error: (error as Error).message };
-    }
+  static async login(email: string, password: string): Promise<{ user: User }> {
+    return apiCall<{ user: User }>(ENDPOINTS.AUTH_LOGIN, {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
   }
 
-  static async signIn(email: string, password: string): Promise<AuthResponse> {
-    try {
-      const data = await this.makeRequest('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
-      });
-      
-      return { success: true, user: data.user };
-    } catch (error) {
-      return { success: false, error: (error as Error).message };
-    }
+  static async logout(): Promise<{ message: string }> {
+    return apiCall<{ message: string }>(ENDPOINTS.AUTH_LOGOUT, {
+      method: 'POST',
+    });
   }
 
-  static async signOut(): Promise<{ success: boolean; error?: string }> {
+  static async getCurrentUser(): Promise<{ user: User | null }> {
     try {
-      await this.makeRequest('/auth/logout', {
-        method: 'POST',
-      });
-      
-      return { success: true };
+      // CORRECTED: Using the correct profile endpoint
+      return await apiCall<{ user: User }>(ENDPOINTS.AUTH_PROFILE);
     } catch (error) {
-      return { success: false, error: (error as Error).message };
-    }
-  }
-
-  static async getCurrentUser(): Promise<{ user: User | null; error?: string }> {
-    try {
-      const data = await this.makeRequest('/auth/user');
-      return { user: data.user };
-    } catch (error) {
-      // User not authenticated
+      // A 401 error is expected if the user is not logged in
       return { user: null };
     }
   }
 
-  // Transaction methods
-  static async getTransactions(): Promise<{ transactions: Transaction[]; error?: string }> {
-    try {
-      const data = await this.makeRequest('/transactions');
-      return { transactions: data.transactions };
-    } catch (error) {
-      return { transactions: [], error: (error as Error).message };
-    }
+  // --- Transaction Methods ---
+  static async getTransactions(): Promise<Transaction[]> {
+    return apiCall<Transaction[]>(ENDPOINTS.TRANSACTIONS);
   }
-
-  static async addTransactions(transactions: Transaction[]): Promise<{ success: boolean; error?: string }> {
-    try {
-      await this.makeRequest('/transactions', {
+  
+  static async bulkAddTransactions(transactions: Partial<Transaction>[]): Promise<Transaction[]> {
+    // CORRECTED: Using the correct bulk endpoint
+    return apiCall<Transaction[]>(ENDPOINTS.TRANSACTION_BULK, {
         method: 'POST',
         body: JSON.stringify({ transactions }),
-      });
-      
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: (error as Error).message };
-    }
+    });
   }
 
-  static async deleteTransaction(transactionId: number): Promise<{ success: boolean; error?: string }> {
-    try {
-      await this.makeRequest(`/transactions/${transactionId}`, {
-        method: 'DELETE',
-      });
-      
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: (error as Error).message };
-    }
+  static async deleteTransaction(id: string): Promise<void> {
+    await apiCall<null>(ENDPOINTS.TRANSACTION_DETAIL(id), {
+        method: 'DELETE'
+    });
   }
 
-  // PDF Processing methods
-  static async processPhonePePDF(file: File): Promise<{ success: boolean; transactions?: Transaction[]; error?: string }> {
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch(`${API_BASE_URL}/process-phonepe-pdf`, {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Processing failed');
-      }
-
-      return { success: true, transactions: data.transactions };
-    } catch (error) {
-      return { success: false, error: (error as Error).message };
-    }
+  // --- File Processing Methods ---
+  static async processPhonePePDF(file: File): Promise<{ transactions: Transaction[] }> {
+    return fileApiCall<{ transactions: Transaction[] }>(ENDPOINTS.PROCESS_PHONEPE_PDF, file);
   }
 
-  static async processPaytmPDF(file: File): Promise<{ success: boolean; transactions?: Transaction[]; error?: string }> {
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch(`${API_BASE_URL}/process-paytm-pdf`, {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Processing failed');
-      }
-
-      return { success: true, transactions: data.transactions };
-    } catch (error) {
-      return { success: false, error: (error as Error).message };
-    }
+  static async processPaytmPDF(file: File): Promise<{ transactions: Transaction[] }> {
+    return fileApiCall<{ transactions: Transaction[] }>(ENDPOINTS.PROCESS_PAYTM_PDF, file);
   }
 
-  // Health check
-  static async healthCheck(): Promise<{ status: string; message: string }> {
-    try {
-      const data = await fetch(`${API_BASE_URL}/health`).then(r => r.json());
-      return data;
-    } catch (error) {
-      return { status: 'error', message: 'Backend not available' };
-    }
+  // --- Health Check ---
+  static async healthCheck(): Promise<{ status: string }> {
+    return apiCall<{ status: string }>(ENDPOINTS.HEALTH);
   }
 }
