@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: the-expense-exterminator
+    env: python
+    plan: free
+    # System dependencies
+    nativeEnvironment:
+      os: ubuntu
+      version: "22.04"
+    # Commands to run on build
+    buildCommand: |
+      apt-get update && apt-get install -y build-essential
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    # Command to start your app
+    startCommand: "gunicorn app:app"
