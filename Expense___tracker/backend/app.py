@@ -38,6 +38,11 @@ def extract_excel_data(file_path: str) -> List[Dict[str, Any]]:
         return [{"error": str(e), "type": "excel"}]
 
 app = Flask(__name__)
+CORS(app, supports_credentials=True, origins=[
+    "http://localhost:5173",  # Local dev
+    "https://the-expense-exterminator-oh37.vercel.app/"  # Deployed frontend
+])
+
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
 # Fix for Railway PostgreSQL URL format
 database_url = os.environ.get('DATABASE_URL', 'sqlite:///expense_tracker.db')
